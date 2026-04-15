@@ -3,9 +3,10 @@ name: Build Aseprite (Windows GUI)
 on:
   push:
     branches: ["**"]
-  pull_request:
-    branches: ["**"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows-gui:
@@ -60,10 +61,25 @@ jobs:
         run: |
           cd build && ninja aseprite
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Package build output
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-out
+          Copy-Item build/bin/aseprite.exe release-out/
+          Copy-Item -Recurse build/bin/data release-out/data
+          $date = Get-Date -Format "yyyyMMdd-HHmmss"
+          $zipName = "aseprite-windows-gui-${date}.zip"
+          Compress-Archive -Path release-out/* -DestinationPath $zipName
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Create or update rolling release
+        uses: softprops/action-gh-release@v2
         with:
-          name: aseprite-windows-gui
-          path: |
-            build/bin/aseprite.exe
-            build/bin/data/
+          tag_name: latest-build
+          name: "Latest Build"
+          body: |
+            Automated Windows GUI build from commit ${{ github.sha }}.
+            Built from branch: `${{ github.ref_name }}`
+          prerelease: true
+          files: ${{ env.ZIP_NAME }}
+          make_latest: false
