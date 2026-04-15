@@ -1,0 +1,69 @@
+name: Build Aseprite (Windows GUI)
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  build-windows-gui:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Set up Ninja
+        uses: aseprite/get-ninja@main
+
+      - name: Set up MSVC (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download Skia
+        shell: bash
+        run: |
+          skia_url=$(source laf/misc/skia-url.sh | xargs)
+          skia_file=$(basename "$skia_url")
+          echo "Downloading Skia from: $skia_url"
+          curl --ssl-revoke-best-effort -L -o "$skia_file" "$skia_url"
+          unzip "$skia_file" -d skia
+
+      - name: Cache build outputs
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: windows-gui-${{ hashFiles('CMakeLists.txt', 'laf/**', 'src/**') }}
+          restore-keys: |
+            windows-gui-
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DLAF_BACKEND=skia \
+            -DSKIA_DIR=$(realpath skia) \
+            -DSKIA_LIBRARY_DIR=$(realpath skia/out/Release-x64) \
+            -DSKIA_LIBRARY=$(realpath skia/out/Release-x64/skia.lib) \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_SCRIPTING=ON \
+            -DENABLE_CCACHE=OFF
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build && ninja aseprite
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aseprite-windows-gui
+          path: |
+            build/bin/aseprite.exe
+            build/bin/data/
